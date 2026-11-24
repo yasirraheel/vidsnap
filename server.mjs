@@ -45,10 +45,13 @@ for (const f of [localYtDlp, path.join(root, 'yt-dlp.bin')]) { try { if (fs.exis
 // public_html dir, NOT the user home — so ~/.cookies/youtube.txt and
 // ~/bin/ffmpeg were never found and YouTube fell back to the android
 // client with no cookies ("Sign in to confirm you're not a bot").
-// The app lives at <home>/domains/<domain>/public_html/downsub, so
-// the real user home is four levels above the app root. Candidates
-// are all checked for existence, so a wrong guess is just skipped.
-const REAL_HOME = path.resolve(root, '..', '..', '..', '..');
+// The app may live directly at <home>/domains/<domain>/public_html or in a
+// nested folder below public_html. Derive the account home from the
+// `/domains/` marker instead of assuming a fixed nesting depth; otherwise
+// moving the checkout from hassanagro.com/public_html/downsub to
+// vidsnap.online/public_html would make ~/bin/ffmpeg and ~/bin/deno vanish.
+const domainsMatch = root.match(/^(.+?)[\\/]domains[\\/]/);
+const REAL_HOME = domainsMatch ? domainsMatch[1] : path.resolve(root, '..', '..', '..', '..');
 const FFMPEG_CANDIDATES = [process.env.FFMPEG, path.join(root, 'ffmpeg'), path.join(REAL_HOME, 'bin', 'ffmpeg'), path.join(os.homedir(), 'bin', 'ffmpeg'), '/usr/bin/ffmpeg', 'ffmpeg'];
 const FFMPEG = FFMPEG_CANDIDATES.find(p => { try { return p && spawnSync(p, ['-version'], { stdio: 'ignore' }).status === 0; } catch { return false; } }) || null;
 const HAS_FFMPEG = !!FFMPEG;
