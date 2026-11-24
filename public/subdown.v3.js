@@ -12,6 +12,15 @@
   var css = '#sf_result{max-width:960px;margin:0 auto;width:100%;box-sizing:border-box;text-align:center;padding:0 12px}' +
     '.sd-card{margin:18px auto;padding:22px 20px;border:1px solid #e3e8e3;border-radius:14px;background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.06);text-align:center}' +
     '.sd-card img{max-width:320px;max-height:240px;width:auto;height:auto;object-fit:contain;border-radius:10px;display:block;margin:0 auto 14px;background:#eef1ee}' +
+    '.sd-qheading{font-size:16px;font-weight:700;margin-bottom:4px}' +
+    '.sd-qrow{display:grid;grid-template-columns:64px minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:12px 14px;margin:8px 0;border:1px solid #e3e8e3;border-radius:10px;background:#fff;box-sizing:border-box}' +
+    '.sd-qthumb{width:64px;height:36px;object-fit:cover;border-radius:6px;display:block;background:#eef1ee}' +
+    '.sd-qthumb-empty{visibility:hidden}' +
+    '.sd-qinfo{min-width:0;overflow:hidden}' +
+    '.sd-qtitle{font-weight:700;font-size:14px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.sd-qstatus{font-size:13px;color:#777;line-height:1.35;white-space:normal;overflow-wrap:anywhere}' +
+    '.sd-qact{min-width:0;display:flex;align-items:center;justify-content:flex-end}' +
+    '.sd-qdel{border:0;background:transparent;color:#999;font-size:18px;line-height:1;cursor:pointer;padding:6px;flex:0 0 auto}' +
     '.sd-skel{margin:18px auto;padding:22px 20px;border:1px solid #e3e8e3;border-radius:14px;background:#fff;box-shadow:0 2px 14px rgba(0,0,0,.06);text-align:center}' +
     '.sd-skel-thumb{width:320px;max-width:100%;height:180px;margin:0 auto 14px;border-radius:10px;background:#eef1ee;display:flex;align-items:center;justify-content:center;animation:sd-pulse 1.4s ease-in-out infinite}' +
     '.sd-skel-line{height:14px;border-radius:7px;background:#eef1ee;margin:0 auto 10px;animation:sd-pulse 1.4s ease-in-out infinite}' +
@@ -29,7 +38,7 @@
     '.sd-cancel{display:inline-block;margin:5px;padding:10px 18px;cursor:pointer;border:2px solid #dc3545;border-radius:8px;background:#fff;color:#b02a37;font-size:14px;font-weight:700}' +
     '.faq_item_title{cursor:pointer}' +
     '.sd-dl{display:inline-block;margin-top:10px;padding:13px 26px;background:#84bd07;color:#fff!important;border-radius:8px;font-weight:700;font-size:16px;text-decoration:none;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;word-break:break-word;text-align:center;line-height:1.4}' +
-    '@media (max-width:600px){.sd-card{padding:16px 12px;margin:14px auto}.sd-card h3{font-size:17px}.sd-card img{max-width:100%}.sd-q,.sd-mp3{padding:10px 13px;font-size:14px;margin:4px 3px}.sd-status{flex-wrap:wrap;justify-content:center;text-align:center}.sd-error{padding:14px}.sd-dl{padding:12px 16px;font-size:15px}}' +
+    '@media (max-width:600px){.sd-card{padding:16px 12px;margin:14px auto}.sd-card h3{font-size:17px}.sd-card img{max-width:100%}.sd-qrow{grid-template-columns:56px minmax(0,1fr) auto;gap:8px;padding:10px!important;align-items:start}.sd-qthumb{width:56px;height:38px}.sd-qact{grid-column:2 / 3;grid-row:2;justify-content:flex-start;margin-top:4px}.sd-qdel{grid-column:3;grid-row:1;padding:4px!important}.sd-qstatus{line-height:1.35}.sd-q,.sd-mp3{padding:10px 13px;font-size:14px;margin:4px 3px}.sd-status{flex-wrap:wrap;justify-content:center;text-align:center}.sd-error{padding:14px}.sd-dl{padding:12px 16px;font-size:15px}}' +
     '.sd-cookie{position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;justify-content:center;padding:12px;box-sizing:border-box;pointer-events:none}' +
     '.sd-cookie-in{pointer-events:auto;max-width:960px;width:100%;background:#fff;border:1px solid #e3e8e3;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.14);padding:14px 18px;display:flex;align-items:center;gap:14px;box-sizing:border-box}' +
     '.sd-cookie-t{flex:1;font-size:14px;line-height:1.5;color:#444;text-align:left}' +
@@ -66,13 +75,13 @@
     var rows = '';
     for (var i = 0; i < q.length; i++) {
       var e = q[i];
-      rows += '<div data-job="' + esc(e.jobId) + '" style="display:flex;align-items:center;gap:12px;padding:12px 14px;margin:8px 0;border:1px solid #e3e8e3;border-radius:10px;background:#fff">' +
-        (e.thumbnail ? '<img src="' + thumbSrc(e.thumbnail, e.url) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'" style="width:64px;height:36px;object-fit:cover;border-radius:6px;flex:0 0 auto">' : '') +
-        '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(e.title || 'Video') + '</div>' +
-        '<div class="sd-qstatus" style="font-size:13px;color:#777">Checking...</div></div>' +
-        '<span class="sd-qact"></span><button type="button" class="sd-qdel" data-del="' + esc(e.jobId) + '" title="Remove from history" aria-label="Remove from history" style="border:0;background:transparent;color:#999;font-size:18px;line-height:1;cursor:pointer;padding:6px;flex:0 0 auto">✕</button></div>';
+      rows += '<div class="sd-qrow" data-job="' + esc(e.jobId) + '">' +
+        (e.thumbnail ? '<img class="sd-qthumb" src="' + thumbSrc(e.thumbnail, e.url) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '<span class="sd-qthumb sd-qthumb-empty" aria-hidden="true"></span>') +
+        '<div class="sd-qinfo"><div class="sd-qtitle">' + esc(e.title || 'Video') + '</div>' +
+        '<div class="sd-qstatus">Checking...</div></div>' +
+        '<span class="sd-qact"></span><button type="button" class="sd-qdel" data-del="' + esc(e.jobId) + '" title="Remove from history" aria-label="Remove from history">✕</button></div>';
     }
-    box.innerHTML = '<div style="font-size:16px;font-weight:700;margin-bottom:4px">Your downloads</div>' + rows;
+    box.innerHTML = '<div class="sd-qheading">Your downloads</div>' + rows;
     q.forEach(function (e) { pollQueueEntry(e); });
   }
   async function pollQueueEntry(e, fails){
