@@ -341,9 +341,12 @@ async function getBeegInfo(id) {
   // Thumbnail: Beeg's own player uses the last fc_thumbs frame at
   // thumbs.externulls.com/videos/{fileId}/{offset}.webp?size=480x{height}.
   const thumbs = facts.fc_facts?.[0]?.fc_thumbs || [];
+  // Some newer Beeg records omit fc_thumbs even though the CDN still
+  // serves frame 0. Keep a preview available instead of returning an
+  // empty thumbnail and making the result card collapse upward.
   const offset = thumbs.length ? thumbs[thumbs.length - 1] : 0;
   const fw = facts.file?.fl_width || 1920, fh = facts.file?.fl_height || 1080;
-  const thumbnail = offset ? `https://thumbs.externulls.com/videos/${id}/${offset}.webp?size=480x${Math.round(480 * fh / fw)}` : '';
+  const thumbnail = `https://thumbs.externulls.com/videos/${id}/${offset}.webp?size=480x${Math.round(480 * fh / fw)}`;
   return { title, duration, formats, thumbnail };
 }
 function beegVariantFor(info, quality) {
