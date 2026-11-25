@@ -137,6 +137,26 @@ function detectPlatform(url) {
   } catch { return 'Unknown'; }
 }
 function validUrl(s) { try { const u = new URL(s); return u.protocol === 'http:' || u.protocol === 'https:'; } catch { return false; } }
+// TikTok photo posts are not videos. TikTok short links can redirect to
+// `/photo/<id>` while looking like an ordinary share link, and yt-dlp then
+// reports the misleading generic "unsupported URL" error. Keep this check
+// explicit so the user gets the real reason and can paste a `/video/` link.
+function tiktokPhotoUrl(url) {
+  try {
+    const u = new URL(String(url));
+    const h = u.hostname.replace(/^www\./, '').toLowerCase();
+    return (h === 'tiktok.com' || h.endsWith('.tiktok.com')) && /\/photo\/\d+/i.test(u.pathname);
+  } catch { return false; }
+}
+function tiktokShortUrl(url) {
+  try {
+    const h = new URL(String(url)).hostname.replace(/^www\./, '').toLowerCase();
+    return /^(?:vt|vm|m)\.tiktok\.com$/.test(h);
+  } catch { return false; }
+}
+function tiktokPhotoError() {
+  return 'This TikTok link is a photo post, not a video. Please copy the TikTok video link that contains /video/ and try again.';
+}
 
 function runYtDlp(args, url, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
@@ -161,6 +181,7 @@ function friendlyError(raw, url) {
   if (s.includes('private video') || s.includes('login required') || s.includes('sign in')) return 'This video is private or needs a login. It cannot be opened without an account.';
   if (s.includes('412') || s.includes('precondition failed')) return 'That site blocked the download request (HTTP 412). This video cannot be downloaded from here.';
   if (s.includes('age-restricted') || s.includes('age restricted') || s.includes('age gate') || s.includes('age verification')) return 'This video is age-restricted and needs a logged-in account.';
+  if (tiktokPhotoUrl(url)) return tiktokPhotoError();
   if (s.includes('unsupported url') || s.includes('no video formats')) return 'This link is not a supported public video link, or the video has no downloadable formats.';
   if (s.includes('video unavailable') || s.includes('removed') || s.includes('deleted')) return 'This video is unavailable, removed, or deleted.';
   if (s.includes('unable to download json metadata') || s.includes('http error 400') || s.includes('bad request')) return 'This video could not be found on that site. The link may be wrong, or the video was removed.';
@@ -875,6 +896,11 @@ function runYtDlpJob(job, jobDir) {
 // free, and by pumpQueue() when a queued job reaches the front.
 function dispatchJob(job, jobDir) {
   const url = job.url;
+  // /api/info normally rejects TikTok photo posts before a job is created.
+  // Keep the guard here too for old/replayed jobs and direct API callers.
+  if (tiktokPhotoUrl(url)) {
+    job.status = 'error'; job.error = tiktokPhotoError(); pumpQueue(); return;
+  }
   // Beeg: native ffmpeg download (yt-dlp cannot do it: broken extractor
   // + CDN 403s fragments without a Referer, which ffmpeg sends).
   const bid = beegId(url);
@@ -1036,6 +1062,14 @@ const server = http.createServer(async (req, res) => {
       if (isDirectMedia(url)) {
         const name = decodeURIComponent(new URL(url).pathname.split('/').pop() || 'video');
         return sendJson(res, 200, { title: name, uploader: '', duration: 0, thumbnail: '', platform: 'Direct file', formats: [{ label: 'Original', height: 720 }], hasAudio: true, ffmpeg: HAS_FFMPEG });
+      }
+      // A TikTok share link may resolve to a photo post. Check the short
+      // redirect before yt-dlp so the user sees the actual limitation,
+      // rather than the generic unsupported-video error.
+      if (tiktokPhotoUrl(url) || tiktokShortUrl(url)) {
+        let ttResolved = url;
+        try { if (tiktokShortUrl(url)) ttResolved = await resolveRedirects(url); } catch {}
+        if (tiktokPhotoUrl(ttResolved)) return sendJson(res, 400, { error: tiktokPhotoError() });
       }
       // Beeg: native resolution (yt-dlp's Beeg extractor is broken).
       const bid = beegId(url);
