@@ -154,8 +154,14 @@ function tiktokShortUrl(url) {
     return /^(?:vt|vm|m)\.tiktok\.com$/.test(h);
   } catch { return false; }
 }
+function isTikTokUrl(url) {
+  try {
+    const h = new URL(String(url)).hostname.replace(/^www\./, '').toLowerCase();
+    return h === 'tiktok.com' || h.endsWith('.tiktok.com');
+  } catch { return false; }
+}
 function tiktokPhotoError() {
-  return 'This TikTok link is a photo post, not a video. Please copy the TikTok video link that contains /video/ and try again.';
+  return 'This TikTok photo post could not be read. Please try the link again, or copy the post link again from TikTok.';
 }
 
 function runYtDlp(args, url, timeoutMs = 120000) {
@@ -310,7 +316,7 @@ function fetchText(url, referer, extraHeaders) {
 // fetches it (it can reach the CDNs) and streams it back. Only known
 // thumbnail hosts are allowed, only images, max 5 MB, cached on disk
 // for 7 days so repeat views cost nothing.
-const THUMB_HOSTS = ['ytimg.com', 'hdslb.com', 'xhcdn.com', 'externulls.com', 'fbcdn.net', 'cdninstagram.com', 'tiktokcdn.com', 'twimg.com', 'redd.it', 'vimeocdn.com', 'dmcdn.net', 'pinimg.com', 'userapi.com', 'vk.com', 'scdn.co', 'snapcdn.com', 'sndcdn.com', 'licdn.com', 'kick.com', 'stream.kick.com'];
+const THUMB_HOSTS = ['ytimg.com', 'hdslb.com', 'xhcdn.com', 'externulls.com', 'fbcdn.net', 'cdninstagram.com', 'tiktokcdn.com', 'tiktokcdn-us.com', 'tiktokv.com', 'muscdn.com', 'twimg.com', 'redd.it', 'vimeocdn.com', 'dmcdn.net', 'pinimg.com', 'userapi.com', 'vk.com', 'scdn.co', 'snapcdn.com', 'sndcdn.com', 'licdn.com', 'kick.com', 'stream.kick.com'];
 const thumbsDir = path.join(root, '.thumbs');
 fs.mkdirSync(thumbsDir, { recursive: true });
 function thumbHostOk(hostname) {
@@ -534,6 +540,49 @@ function resolveRedirects(url, left) {
     req.on('error', reject); req.setTimeout(20000, () => req.destroy(new Error('Timed out')));
   });
 }
+// TikTok's web extractor currently handles `/video/` posts but not the
+// newer `/photo/` carousel posts. TikWM exposes the signed CDN image URLs
+// for public posts, so use it only for TikTok photo posts; regular TikTok
+// videos continue through our normal yt-dlp path.
+async function getTikTokPhotoInfo(url) {
+  const api = 'https://www.tikwm.com/api/?url=' + encodeURIComponent(url);
+  const raw = await fetchText(api, 'https://www.tikwm.com/');
+  let body;
+  try { body = JSON.parse(raw); } catch { throw new Error('TikTok photo API returned invalid data.'); }
+  const d = body && body.data;
+  if (!d || body.code !== 0) return null;
+  const images = [];
+  const seen = new Set();
+  const add = value => {
+    const list = Array.isArray(value) ? value : [value];
+    for (const item of list) {
+      const u = typeof item === 'string' ? item : (item && (item.url || item.url_list || item.urlList));
+      const urls = Array.isArray(u) ? u : [u];
+      for (const candidate of urls) {
+        if (!candidate || typeof candidate !== 'string' || !/^https?:\/\//i.test(candidate)) continue;
+        try {
+          const h = new URL(candidate).hostname.toLowerCase();
+          if (!(h.endsWith('.tiktokcdn.com') || h.endsWith('.tiktokcdn-us.com') || h.endsWith('.tiktokv.com') || h.endsWith('.muscdn.com'))) continue;
+        } catch { continue; }
+        if (!seen.has(candidate)) { seen.add(candidate); images.push(candidate); }
+        break;
+      }
+    }
+  };
+  add(d.images);
+  if (!images.length) return null;
+  const author = d.author && (d.author.nickname || d.author.unique_id || d.author.uniqueId) || '';
+  const title = String(d.title || d.desc || 'TikTok photo').replace(/\s+/g, ' ').trim() || 'TikTok photo';
+  const cover = typeof d.cover === 'string' && d.cover.startsWith('http') ? d.cover : images[0];
+  return {
+    title,
+    uploader: String(author),
+    duration: 0,
+    thumbnail: cover,
+    formats: images.slice(0, 20).map((fileUrl, i) => ({ label: `Image ${i + 1}`, height: `image${i}`, fileUrl })),
+    mediaKind: 'image'
+  };
+}
 function decodeEntities(s) {
   return String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 }
@@ -608,14 +657,14 @@ async function getLinkedInInfo(pageUrl) {
   const mediaKind = videos.length ? 'video' : (images.length ? 'image' : 'document');
   return { title, duration, thumbnail, formats, mediaKind };
 }
-function downloadToFile(url, dest, onProgress) {
+function downloadToFile(url, dest, onProgress, referer = 'https://www.linkedin.com/') {
   return new Promise((resolve, reject) => {
     let u; try { u = new URL(url); } catch { return reject(new Error('Bad download URL')); }
     const lib = u.protocol === 'https:' ? https : http;
-    const req = lib.get(u, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36', Referer: 'https://www.linkedin.com/' } }, res => {
+    const req = lib.get(u, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36', ...(referer ? { Referer: referer } : {}) } }, res => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        return resolve(downloadToFile(new URL(res.headers.location, u).toString(), dest, onProgress));
+        return resolve(downloadToFile(new URL(res.headers.location, u).toString(), dest, onProgress, referer));
       }
       if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
       const total = parseInt(res.headers['content-length'] || '0', 10) || 0;
@@ -629,6 +678,31 @@ function downloadToFile(url, dest, onProgress) {
     });
     req.on('error', reject); req.setTimeout(120000, () => req.destroy(new Error('Timed out')));
   });
+}
+async function runTikTokPhotoJob(job, jobDir) {
+  try {
+    const info = await getTikTokPhotoInfo(job.url);
+    if (!info || !info.formats.length) throw new Error('No TikTok photo images were returned.');
+    const q = String(job.quality || 'image0');
+    const fmt = q === 'best' ? info.formats[0] : info.formats.find(f => String(f.height) === q);
+    if (!fmt) throw new Error('That photo is no longer available.');
+    job.title = info.title;
+    try { fs.writeFileSync(path.join(jobDir, 'meta.json'), JSON.stringify({ url: job.url, quality: job.quality, duration: 0, createdAt: job.createdAt || Date.now() })); } catch {}
+    const base = safeName(info.title);
+    const outFile = path.join(jobDir, `${base}-${fmt.height}.jpg`);
+    const { type } = await downloadToFile(fmt.fileUrl, outFile, (got, total) => {
+      job.progress = total ? Math.min(99, Math.round(got / total * 100)) : 50;
+    }, 'https://www.tiktok.com/');
+    if (type) {
+      const realExt = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : (type.includes('jpeg') || type.includes('jpg')) ? 'jpg' : null;
+      if (realExt && realExt !== 'jpg') { try { fs.renameSync(outFile, outFile.replace(/\.jpg$/, '.' + realExt)); } catch {} }
+    }
+    finishJob(job, jobDir, null);
+  } catch {
+    job.status = 'error';
+    job.error = 'This TikTok photo post could not be downloaded. Please try the link again.';
+    pumpQueue();
+  }
 }
 async function runLinkedInJob(job, jobDir) {
   try {
@@ -896,10 +970,10 @@ function runYtDlpJob(job, jobDir) {
 // free, and by pumpQueue() when a queued job reaches the front.
 function dispatchJob(job, jobDir) {
   const url = job.url;
-  // /api/info normally rejects TikTok photo posts before a job is created.
-  // Keep the guard here too for old/replayed jobs and direct API callers.
-  if (tiktokPhotoUrl(url)) {
-    job.status = 'error'; job.error = tiktokPhotoError(); pumpQueue(); return;
+  // Photo qualities are only produced by TikTok's photo-post resolver.
+  // Handle them natively instead of sending the `/photo/` URL to yt-dlp.
+  if (isTikTokUrl(url) && (tiktokPhotoUrl(url) || /^image\d+$/.test(String(job.quality || '')))) {
+    runTikTokPhotoJob(job, jobDir); return;
   }
   // Beeg: native ffmpeg download (yt-dlp cannot do it: broken extractor
   // + CDN 403s fragments without a Referer, which ffmpeg sends).
@@ -1069,7 +1143,13 @@ const server = http.createServer(async (req, res) => {
       if (tiktokPhotoUrl(url) || tiktokShortUrl(url)) {
         let ttResolved = url;
         try { if (tiktokShortUrl(url)) ttResolved = await resolveRedirects(url); } catch {}
-        if (tiktokPhotoUrl(ttResolved)) return sendJson(res, 400, { error: tiktokPhotoError() });
+        if (tiktokPhotoUrl(ttResolved)) {
+          try {
+            const info = await getTikTokPhotoInfo(url);
+            if (!info || !info.formats.length) return sendJson(res, 400, { error: tiktokPhotoError() });
+            return sendJson(res, 200, { title: info.title, uploader: info.uploader, duration: 0, thumbnail: info.thumbnail, platform: 'TikTok', formats: info.formats.map(f => ({ label: f.label, height: f.height })), hasAudio: false, ffmpeg: HAS_FFMPEG, mediaKind: 'image', noAudio: true });
+          } catch { return sendJson(res, 502, { error: 'TikTok photo could not be opened right now. Please try the link again.' }); }
+        }
       }
       // Beeg: native resolution (yt-dlp's Beeg extractor is broken).
       const bid = beegId(url);
