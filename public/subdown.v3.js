@@ -31,6 +31,7 @@
     '.sd-q{display:inline-block;margin:5px;padding:11px 20px;cursor:pointer;border:none;border-radius:8px;background:#84bd07;color:#fff;font-size:15px;font-weight:700}' +
     '.sd-q:hover{background:#74a806}' +
     '.sd-mp3{display:inline-block;margin:5px;padding:11px 20px;cursor:pointer;border:2px solid #84bd07;border-radius:8px;background:#fff;color:#5a7d05;font-size:15px;font-weight:700}' +
+    '.sd-all{display:inline-block;margin:5px;padding:11px 20px;cursor:pointer;border:2px solid #84bd07;border-radius:8px;background:#84bd07;color:#fff;font-size:15px;font-weight:700}' +
     '.sd-status{margin:16px auto;padding:0;border:0;border-radius:0;background:none;display:flex;align-items:center;justify-content:center;gap:12px;font-size:15px;color:#2f4d0a;text-align:left}' +
     '.sd-error{margin:16px auto;padding:16px 18px;border:1px solid #f5c2c7;border-left:5px solid #dc3545;border-radius:10px;background:#fff5f5;text-align:left}' +
     '.sd-spin{width:26px;height:26px;min-width:26px;border:3px solid #d9e8d9;border-top-color:#84bd07;border-radius:50%;animation:sd-rot 1s linear infinite}' +
@@ -38,7 +39,7 @@
     '.sd-cancel{display:inline-block;margin:5px;padding:10px 18px;cursor:pointer;border:2px solid #dc3545;border-radius:8px;background:#fff;color:#b02a37;font-size:14px;font-weight:700}' +
     '.faq_item_title{cursor:pointer}' +
     '.sd-dl{display:inline-block;margin-top:10px;padding:13px 26px;background:#84bd07;color:#fff!important;border-radius:8px;font-weight:700;font-size:16px;text-decoration:none;max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;word-break:break-word;text-align:center;line-height:1.4}' +
-    '@media (max-width:600px){.sd-card{padding:16px 12px;margin:14px auto}.sd-card h3{font-size:17px}.sd-card img{max-width:100%}.sd-qrow{grid-template-columns:56px minmax(0,1fr) auto;gap:8px;padding:10px!important;align-items:start}.sd-qthumb{width:56px;height:38px}.sd-qact{grid-column:2 / 3;grid-row:2;justify-content:flex-start;margin-top:4px}.sd-qdel{grid-column:3;grid-row:1;padding:4px!important}.sd-qstatus{line-height:1.35}.sd-q,.sd-mp3{padding:10px 13px;font-size:14px;margin:4px 3px}.sd-status{flex-wrap:wrap;justify-content:center;text-align:center}.sd-error{padding:14px}.sd-dl{padding:12px 16px;font-size:15px}}' +
+    '@media (max-width:600px){.sd-card{padding:16px 12px;margin:14px auto}.sd-card h3{font-size:17px}.sd-card img{max-width:100%}.sd-qrow{grid-template-columns:56px minmax(0,1fr) auto;gap:8px;padding:10px!important;align-items:start}.sd-qthumb{width:56px;height:38px}.sd-qact{grid-column:2 / 3;grid-row:2;justify-content:flex-start;margin-top:4px}.sd-qdel{grid-column:3;grid-row:1;padding:4px!important}.sd-qstatus{line-height:1.35}.sd-q,.sd-mp3,.sd-all{padding:10px 13px;font-size:14px;margin:4px 3px}.sd-status{flex-wrap:wrap;justify-content:center;text-align:center}.sd-error{padding:14px}.sd-dl{padding:12px 16px;font-size:15px}}' +
     '.sd-cookie{position:fixed;left:0;right:0;bottom:0;z-index:9999;display:flex;justify-content:center;padding:12px;box-sizing:border-box;pointer-events:none}' +
     '.sd-cookie-in{pointer-events:auto;max-width:960px;width:100%;background:#fff;border:1px solid #e3e8e3;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.14);padding:14px 18px;display:flex;align-items:center;gap:14px;box-sizing:border-box}' +
     '.sd-cookie-t{flex:1;font-size:14px;line-height:1.5;color:#444;text-align:left}' +
@@ -247,12 +248,14 @@
     var btns = (info.formats || []).map(function (f) {
       return '<button type="button" class="sd-q" data-q="' + esc(f.height) + '">' + esc(f.label) + '</button>';
     }).join('');
+    var allImages = info.mediaKind === 'image' && (info.formats || []).length > 1
+      ? '<button type="button" class="sd-all" data-q="images">Download all images (ZIP)</button>' : '';
     show(
       '<div class="sd-card">' +
       (info.thumbnail ? '<img src="' + thumbSrc(info.thumbnail, url) + '" alt="" referrerpolicy="no-referrer" onerror="this.style.display=\'none\'">' : '') +
       '<h3>' + esc(info.title || 'Video') + '</h3>' +
       '<p class="sd-meta">' + esc(info.platform || '') + (info.duration ? ' &bull; ' + Math.round(info.duration / 60) + ' min' : '') + '</p>' +
-      '<p style="font-weight:700;margin:0 0 6px">' + (info.audioOnly ? 'Audio:' : info.mediaKind === 'image' ? 'Choose image:' : info.mediaKind === 'document' ? 'Choose file:' : 'Choose quality:') + '</p><div>' + (btns || '<button type="button" class="sd-q" data-q="best">Download</button>') + '</div>' +
+      '<p style="font-weight:700;margin:0 0 6px">' + (info.audioOnly ? 'Audio:' : info.mediaKind === 'image' ? 'Choose image:' : info.mediaKind === 'document' ? 'Choose file:' : 'Choose quality:') + '</p><div>' + allImages + (btns || '<button type="button" class="sd-q" data-q="best">Download</button>') + '</div>' +
       (info.audioOnly || info.noAudio ? '' : '<button type="button" class="sd-mp3" data-q="audio">MP3 Audio</button>') +
       '<p id="sd-status"></p></div>'
     );

@@ -250,6 +250,7 @@ function fileContentType(file) {
   if (ext === '.png') return 'image/png';
   if (ext === '.webp') return 'image/webp';
   if (ext === '.pdf') return 'application/pdf';
+  if (ext === '.zip') return 'application/zip';
   return 'video/mp4';
 }
 
@@ -704,6 +705,50 @@ async function runTikTokPhotoJob(job, jobDir) {
     pumpQueue();
   }
 }
+async function runTikTokPhotoZipJob(job, jobDir) {
+  const tempFiles = [];
+  try {
+    const info = await getTikTokPhotoInfo(job.url);
+    if (!info || !info.formats.length) throw new Error('No TikTok photo images were returned.');
+    job.title = info.title;
+    try { fs.writeFileSync(path.join(jobDir, 'meta.json'), JSON.stringify({ url: job.url, quality: job.quality, duration: 0, createdAt: job.createdAt || Date.now() })); } catch {}
+    const base = safeName(info.title);
+    for (let i = 0; i < info.formats.length; i++) {
+      const fmt = info.formats[i];
+      const outFile = path.join(jobDir, `image-${String(i + 1).padStart(2, '0')}.jpg`);
+      const { type } = await downloadToFile(fmt.fileUrl, outFile, (got, total) => {
+        const part = total ? got / total : 0.5;
+        job.progress = Math.min(85, Math.max(1, Math.round(((i + part) / info.formats.length) * 85)));
+      }, 'https://www.tiktok.com/');
+      let file = outFile;
+      if (type) {
+        const realExt = type.includes('png') ? 'png' : type.includes('webp') ? 'webp' : (type.includes('jpeg') || type.includes('jpg')) ? 'jpg' : null;
+        if (realExt && realExt !== 'jpg') { const renamed = outFile.replace(/\.jpg$/, '.' + realExt); try { fs.renameSync(outFile, renamed); file = renamed; } catch {} }
+      }
+      tempFiles.push(file);
+    }
+    const zipFile = path.join(jobDir, safeName(base, 'zip'));
+    const zipCmd = fs.existsSync('/usr/bin/zip') ? '/usr/bin/zip' : 'zip';
+    await new Promise((resolve, reject) => {
+      const p = spawn(zipCmd, ['-j', '-q', zipFile, ...tempFiles], { cwd: jobDir, stdio: ['ignore', 'pipe', 'pipe'], env: CHILD_ENV });
+      job.proc = p;
+      let err = '';
+      p.stderr.on('data', d => { err += d; });
+      p.on('error', reject);
+      p.on('close', code => code === 0 ? resolve() : reject(new Error(err || `zip exited with code ${code}`)));
+    });
+    job.proc = null;
+    job.progress = 99;
+    for (const file of tempFiles) { try { fs.unlinkSync(file); } catch {} }
+    finishJob(job, jobDir, null);
+  } catch {
+    job.proc = null;
+    for (const file of tempFiles) { try { fs.unlinkSync(file); } catch {} }
+    job.status = 'error';
+    job.error = 'The TikTok photo images could not be bundled. Please try again.';
+    pumpQueue();
+  }
+}
 async function runLinkedInJob(job, jobDir) {
   try {
     let pageUrl = linkedinPostUrl(job.url);
@@ -789,6 +834,7 @@ function pickJobFile(job, jobDir) {
   // empty by design. (Only these qualities take this branch, so a
   // video job that produced no video still errors instead of serving
   // a stray thumbnail as "ready".)
+  if (!pool.length && job.quality === 'images') pool = files.filter(f => path.extname(f).toLowerCase() === '.zip');
   if (!pool.length && (job.quality === 'doc' || /^image\d+$/.test(String(job.quality || '')))) pool = files.filter(f => ['.jpg', '.jpeg', '.png', '.webp', '.pdf'].includes(path.extname(f).toLowerCase()));
   if (!pool.length) return null;
   pool.sort((a, b) => fs.statSync(path.join(jobDir, b)).size - fs.statSync(path.join(jobDir, a)).size);
@@ -972,8 +1018,10 @@ function dispatchJob(job, jobDir) {
   const url = job.url;
   // Photo qualities are only produced by TikTok's photo-post resolver.
   // Handle them natively instead of sending the `/photo/` URL to yt-dlp.
-  if (isTikTokUrl(url) && (tiktokPhotoUrl(url) || /^image\d+$/.test(String(job.quality || '')))) {
-    runTikTokPhotoJob(job, jobDir); return;
+  if (isTikTokUrl(url) && (tiktokPhotoUrl(url) || job.quality === 'images' || /^image\d+$/.test(String(job.quality || '')))) {
+    if (job.quality === 'images') runTikTokPhotoZipJob(job, jobDir);
+    else runTikTokPhotoJob(job, jobDir);
+    return;
   }
   // Beeg: native ffmpeg download (yt-dlp cannot do it: broken extractor
   // + CDN 403s fragments without a Referer, which ffmpeg sends).
